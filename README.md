@@ -64,14 +64,15 @@ The goal is to achieve a **fully automated, production-grade cloud-native deploy
 ### 1. Deploy with Docker
 
 ```bash
-git clone cd https://github.com/BrainStation23HR/Devops_Masud.git
-cd 
+git clone https://github.com/BrainStation23HR/Devops_Masud.git
+cd Devops_Masud
 docker build -t weather-api-img .
 docker run -it -d -p 8000:8000 --name weather-api-cont weather-api-img
 ```
 OR Use Docker compose file 
 
 ```bash
+# Ensure the .env file is in the root directory
 docker-compose --env-file .env up -d
 ```
 ### 2. Provision Infrastructure (EKS Cluster)
@@ -112,16 +113,10 @@ Web Application Firewall (WAF): Protects the application from common web exploit
 
 2. API Gateway
 
-Acts as the entry point for all API requests (Read API and Write API).
-Handles request routing, authentication, rate limiting, and API versioning.
-Forwards read requests to the microservice and write requests to the worker service for background processing.
+Acts as a single entry point for all API requests (Read API and Write API), decoupling clients from the underlying microservices and worker services. Handles request routing, authentication, rate limiting, and API versioning.
 
 3. Microservice
-
-A stateless service that handles business logic for read-heavy operations.
-Interacts with the in-memory cache (e.g., Redis) to fetch frequently accessed data quickly.
-Queries the RDS (Relational Database Service) read replicas for data not found in the cache.
-Stores and retrieves large objects (e.g., images, files) from object storage (e.g., S3).
+A stateless service that handles business logic for read-heavy operations. Being stateless allows for easy horizontal scaling by adding more instances without concern for shared session data. Interacts with the in-memory cache (e.g., Redis) to fetch frequently accessed data quickly.
 
 4. Database Layer
 
