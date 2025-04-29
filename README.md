@@ -64,7 +64,7 @@ The goal is to achieve a **fully automated, production-grade cloud-native deploy
 ### 1. Deploy with Docker
 
 ```bash
-git clone https://github.com/BrainStation23HR/Devops_Masud.git
+git clone cd https://github.com/BrainStation23HR/Devops_Masud.git
 cd 
 docker build -t weather-api-img .
 docker run -it -d -p 8000:8000 --name weather-api-cont weather-api-img
