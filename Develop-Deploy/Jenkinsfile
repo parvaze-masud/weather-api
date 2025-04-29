@@ -1,48 +1,110 @@
 pipeline {
-    agent any
+    agent { label 'v9' }
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-credentials')   // Jenkins secret credentials ID
-        DOCKER_IMAGE = 'parvazemasud/weather-api'
+        REPO_URL = "https://github.com/parvaze-masud/weather-api.git"
+        BRANCH_NAME = "main"
+        DOCKERHUB_CREDENTIAL_ID = "dockerhub-pri"
+        DOCKER_IMAGE = 'parvazemasud/weather-app'
         DOCKER_TAG = "${BUILD_NUMBER}"
         KUBE_NAMESPACE = 'default'
         DEPLOYMENT_NAME = 'weather-api-deployment'
+        CONTAINER_NAME = 'weather-api'                       
+        KUBECONFIG = '/home/ubuntu/.kube/config'      
     }
 
     stages {
-        stage('Checkout Source') {
+        stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/your-username/your-repo.git'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    checkout scmGit(
+                        branches: [[name: "*/${env.BRANCH_NAME}"]],
+                        extensions: [],
+                        userRemoteConfigs: [[
+                            credentialsId: 'ai-hackathon-git-cred',
+                            url: "${env.REPO_URL}"
+                        ]]
+                    )
+                }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Set Image Tags') {
             steps {
-                script {
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKERHUB_CREDENTIAL_ID,
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    script {
+                        def versionTag = "build-${env.BUILD_NUMBER}"
+                        env.DOCKERHUB_REPO = "${env.DOCKER_IMAGE}"
+                        env.BUILD_TAG = "${env.DOCKERHUB_REPO}:${versionTag}"
+                        env.LATEST_TAG = "${env.DOCKERHUB_REPO}:latest"
+                    }
+                }
+            }
+        }
+
+        stage('Build and Tag Docker Image') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     sh """
-                    docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
+                        docker build -t $BUILD_TAG -t $LATEST_TAG -f Develop-Deploy/Dockerfile Develop-Deploy
                     """
                 }
             }
         }
 
-        stage('Push Docker Image to Registry') {
+        stage('Login to DockerHub') {
             steps {
-                script {
-                    sh """
-                    echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
-                    docker push ${DOCKER_IMAGE}:${DOCKER_TAG}
-                    """
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    withCredentials([usernamePassword(
+                        credentialsId: env.DOCKERHUB_CREDENTIAL_ID,
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    }
                 }
             }
         }
 
-        stage('Update Kubernetes Deployment') {
+        stage('Push to DockerHub') {
             steps {
-                script {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh '''
+                        docker push $BUILD_TAG
+                        docker push $LATEST_TAG
+                    '''
+                }
+            }
+        }
+
+        stage('Logout from DockerHub') {
+            steps {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    sh 'docker logout'
+                }
+            }
+        }
+
+        stage('Cleanup') {
+            steps {
+                echo "Cleaning up unused Docker images..."
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                    sh 'docker image prune -af'
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     sh """
-                    kubectl set image deployment/${DEPLOYMENT_NAME} weather-api=${DOCKER_IMAGE}:${DOCKER_TAG} -n ${KUBE_NAMESPACE}
-                    kubectl rollout status deployment/${DEPLOYMENT_NAME} -n ${KUBE_NAMESPACE}
+                        echo "Deploying to Kubernetes cluster..."
+                        kubectl --kubeconfig=$KUBECONFIG set image deployment/${DEPLOYMENT_NAME} ${CONTAINER_NAME}=${BUILD_TAG} -n ${KUBE_NAMESPACE}
+                        kubectl --kubeconfig=$KUBECONFIG rollout status deployment/${DEPLOYMENT_NAME} -n ${KUBE_NAMESPACE}
                     """
                 }
             }
@@ -51,11 +113,13 @@ pipeline {
 
     post {
         success {
-            echo "✅ Successfully deployed Weather API App to Kubernetes!"
+            echo "✅ CI/CD Pipeline completed successfully! Image pushed & Deployment updated: $BUILD_TAG"
         }
         failure {
-            echo "❌ Deployment failed. Check logs carefully."
+            echo "❌ Pipeline failed! Please check stage logs."
+        }
+        always {
+            echo "📋 Pipeline finished. Review results above."
         }
     }
 }
-
