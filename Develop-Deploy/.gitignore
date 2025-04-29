@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Docker
+*.log
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+crash.log
+terraform.tfvars.backup
+
+# Kubernetes
+k8s-manifests/secret.yaml
+
+# Env Files
+.env
+
+# OS Junk
+.DS_Store
+Thumbs.db
+
